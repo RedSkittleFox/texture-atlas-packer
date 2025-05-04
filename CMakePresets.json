@@ -1,0 +1,33 @@
+{
+    "version": 4,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 20
+    },
+    "configurePresets": [
+        {
+            "name": "binary_env",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "generator": "Ninja Multi-Config"
+        },
+        {
+            "inherits": [ "binary_env" ],
+            "name" : "linux"
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "linux-debug",
+            "configurePreset": "linux",
+            "configuration": "Debug",
+            "jobs" : 0
+        },
+        {
+            "name": "linux-release",
+            "configurePreset": "linux",
+            "configuration": "RelWithDebInfo",
+            "jobs" : 0
+        }
+    ]
+}
