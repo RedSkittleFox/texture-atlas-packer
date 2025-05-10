@@ -1,0 +1,76 @@
+name: Linux Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CONFIGURE_PRESET: linux
+  BUILD_PRESET: linux-release
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install LLVM Clang-19
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wget gnupg
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        sudo ./llvm.sh 19
+
+    - name: Set Clang as default
+      run: |
+        sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-19 100
+        sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-19 100
+
+    - name: Configure CMake
+      run: CC=clang-19 CXX=clang++-19 cmake --preset ${{env.CONFIGURE_PRESET}}
+
+    - name: Build
+      run: cmake --build --preset ${{env.BUILD_PRESET}}
+
+    - name: Package Binary
+      run: cpack --preset linux-release
+
+    - name: Package Source
+      run: cpack --preset linux-source-release
+
+    - name: Create GitHub Release
+      id: create_release
+      uses: actions/create-release@v1
+      with:
+        tag_name: ${{ github.ref_name }}
+        release_name: Release ${{ github.ref_name }}
+        draft: true
+        prerelease: false
+
+    - name: Upload Binary Asset
+      uses: actions/upload-release-asset@v1
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: build/linux/texture-atlas-packer.tar.gz
+        asset_name: texture-atlas-packer-${{ github.ref_name }}-linux.tar.gz
+        asset_content_type: application/gzip
+
+    - name: Upload Source ZIP
+      uses: actions/upload-release-asset@v1
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: build/linux/texture-atlas-packer-source.zip
+        asset_name: texture-atlas-packer-${{ github.ref_name }}-source.zip
+        asset_content_type: application/zip
+
+    - name: Upload Source GZIP
+      uses: actions/upload-release-asset@v1
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: build/linux/texture-atlas-packer-source.tar.gz
+        asset_name: texture-atlas-packer-${{ github.ref_name }}-source.tar.gz
+        asset_content_type: application/gzip

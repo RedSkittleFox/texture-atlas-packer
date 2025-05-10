@@ -76,4 +76,10 @@ foreach(i RANGE 0 ${license_range_to})
 endforeach()
 
 # Install licenses
-install(FILES ${PROJECT_SOURCE_DIR}/LICENSE ${THIRD_PARTY_LICENSES_FILE} DESTINATION "share/licenses")
+install(
+    FILES
+        ${PROJECT_SOURCE_DIR}/LICENSE
+        ${THIRD_PARTY_LICENSES_FILE}
+    DESTINATION
+        "."
+)

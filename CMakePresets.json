@@ -1,5 +1,5 @@
 {
-    "version": 4,
+    "version": 6,
     "cmakeMinimumRequired": {
         "major": 3,
         "minor": 20
@@ -34,6 +34,19 @@
             "configurePreset": "linux",
             "configuration": "Release",
             "jobs" : 0
+        }
+    ],
+    "packagePresets": [
+        {
+            "name": "linux-source-release",
+            "configurePreset": "linux",
+            "generators": ["ZIP","TGZ"],
+            "configFile": "CPackSourceConfig.cmake"
+        },
+        {
+            "name": "linux-release",
+            "configurePreset": "linux",
+            "generators": ["TGZ"]
         }
     ]
 }

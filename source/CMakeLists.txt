@@ -18,4 +18,9 @@ target_link_libraries(
         nlohmann_json::nlohmann_json
 )
 
-install(TARGETS texture-atlas-packer DESTINATION bin)
+install(
+    TARGETS
+        texture-atlas-packer
+    DESTINATION
+        bin
+)
