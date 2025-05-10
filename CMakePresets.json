@@ -24,9 +24,15 @@
             "jobs" : 0
         },
         {
-            "name": "linux-release",
+            "name": "linux-release-with-deb-info",
             "configurePreset": "linux",
             "configuration": "RelWithDebInfo",
+            "jobs" : 0
+        },
+        {
+            "name": "linux-release",
+            "configurePreset": "linux",
+            "configuration": "Release",
             "jobs" : 0
         }
     ]

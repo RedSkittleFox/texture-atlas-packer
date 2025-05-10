@@ -3,30 +3,18 @@
 #include <vector>
 #include <filesystem>
 #include <unordered_map>
-#include <map>
 
-enum class output_image_format
-{
-    PNG,
-    BMP,
-    TGA,
-    JPG
-};
-
-const std::map<std::string, output_image_format> output_format_map {
-    {"png", output_image_format::PNG},
-    {"bmp", output_image_format::BMP},
-    {"tga", output_image_format::TGA},
-    {"jpg", output_image_format::JPG}
-};
+#include "application_config.hpp"
 
 class application
 {
     static constexpr std::uint32_t bin_n_pos = std::numeric_limits<std::uint32_t>::max();
+    application_config& config_;
 
     struct image
     {
         std::filesystem::path path;
+        std::filesystem::path atlas_path;
 
         std::uint32_t width = 0;
         std::uint32_t height = 0;
@@ -42,22 +30,29 @@ class application
     > images_;
 
     std::uint32_t min_channels_ = 3;
-    std::uint32_t bin_size_;
+    std::uint32_t max_channels_ = 0;
 
+    std::vector<std::filesystem::path> bin_paths_;
     std::vector<std::unique_ptr<std::uint8_t[]>> bins_;
 
 public:
     application() = delete;
-    application(const application&) = default;
-    application(application&&) noexcept = default;
-    application& operator=(const application&) = default;
-    application& operator=(application&&) noexcept = default;
+    application(const application&) = delete;
+    application(application&&) noexcept = delete;
+    application& operator=(const application&) = delete;
+    application& operator=(application&&) noexcept = delete;
     ~application() noexcept = default;
 
 public:
-    explicit application(const std::vector<std::filesystem::path>& paths, std::uint32_t bin_size);
+    explicit application(application_config& config);
+    void run();
 
+private:
+    void generate_image_database();
     void pack();
     void generate_atlases();
-    void write_atlases(output_image_format format, const std::filesystem::path& output_folder, const std::string& output_name_format);
+    void write_atlases();
+    void write_config();
+
+    std::string format_image_file_name(std::size_t image) const;
 };

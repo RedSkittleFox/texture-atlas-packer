@@ -11,30 +11,50 @@
 #include <unordered_map>
 #include <cstring>
 #include <execution>
-
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
-
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include <stb_image_write.h>
+#include <string>
+#include <fstream>
 
 #include <rectpack2D/finders_interface.h>
+#include <nlohmann/json.hpp>
 
-application::application(const std::vector<std::filesystem::path>& paths, std::uint32_t bin_size)
-    : min_channels_(0), bin_size_(bin_size)
+#include "image_file_io.hpp"
+
+application::application(application_config& config)
+    : config_(config), min_channels_(0)
 {
-    const std::set<std::string> supported_extensions
+    switch (config_.image_output_format)
     {
-        ".png", ".jpg", ".bmp", ".psd", ".gif", ".hdr", ".pic", ".pnm", ".ppm", ".pgm"
-    };
+    case e_image_output_format::BMP:
+    case e_image_output_format::JPG:
+        max_channels_ = 3;
+        break;
+    case e_image_output_format::PNG:
+    case e_image_output_format::TGA:
+        max_channels_ = 4;
+        break;
+    default:
+        std::unreachable();
+    }
+}
 
+void application::run()
+{
+    this->generate_image_database();
+    this->pack();
+    this->generate_atlases();
+    this->write_atlases();
+    this->write_config();
+}
+
+void application::generate_image_database()
+{
     // Used to check if relative paths don't overlap
     std::unordered_map<
         std::filesystem::path, // relative path
         const std::filesystem::path* // absolute path
     > processed_files;
 
-    for (auto& path : paths)
+    for (auto& path : config_.source_directories)
     {
         // Don't process duplicates twice
         if (images_.contains(path))
@@ -58,12 +78,23 @@ application::application(const std::vector<std::filesystem::path>& paths, std::u
             if (!std::filesystem::is_regular_file(entry))
                 continue;
 
-            auto [it, emplaced] = processed_files.try_emplace(entry.path(), p_path);
+            // Compute atlas path
+            std::filesystem::path atlas_path;
+            atlas_path = std::filesystem::relative(entry.path(), path);
+
+            if (config_.config_include_extensions_in_atlas_file_names == false)
+            {
+                atlas_path = atlas_path.replace_extension();
+            }
+
+            atlas_path.make_preferred();
+
+            auto [it, emplaced] = processed_files.try_emplace(atlas_path.string(), p_path);
             if (emplaced == false)
             {
                 std::print(
                     std::cerr,
-                    "Duplicate relative paths '{}' in folders '{}' and '{}'.\n\tKeeping '{}'.\n\tSkipping '{}'.\n",
+                    "Duplicate atlas paths '{}' in folders '{}' and '{}'.\n\tKeeping '{}'.\n\tSkipping '{}'.\n",
                     std::filesystem::relative(entry.path(), path).string(),
                     it->second->string(),
                     path.string(),
@@ -74,42 +105,39 @@ application::application(const std::vector<std::filesystem::path>& paths, std::u
                 continue;
             }
 
-            std::string extension = entry.path().extension().string();
-            std::ranges::for_each(extension, [](char& c) { c = std::tolower(c); });
+            auto file = open_file(entry);
 
-            if (!supported_extensions.contains(extension))
-                continue;
-
-            std::unique_ptr<std::FILE, decltype([](FILE* f) { if (f) std::fclose(f); } )> file;
-
-#ifdef _WIN32
-                file.reset(_wfopen(entry.path().wstring().c_str(), L"rb"));
-#else
-            file.reset(std::fopen(entry.path().string().c_str(), "rb"));
-#endif
-
-            if (file.get() == nullptr)
+            if (file == nullptr)
             {
                 std::print(std::cerr, "Failed to open file '{}'. Skipping...\n", entry.path().string());
                 continue;
             }
 
-            int x, y, channels;
-            if (stbi_info_from_file(file.get(), std::addressof(x), std::addressof(y), std::addressof(channels)) == 0)
-            {
-                std::print(
-                    std::cerr, "Failed to load image '{}': {}. Skipping...\n",
-                    entry.path().string(), stbi_failure_reason()
-                );
+            std::size_t width, height, channels;
+            auto result = read_image_metadata(file.get(), width, height, channels);
 
+            if (result.has_value() == false)
+            {
+                std::print(std::cerr, "Failed to read '{}' as an image. {}. Skipping...\n",
+                    entry.path().string(), result.error());
                 continue;
             }
 
-            min_channels_ = std::max(min_channels_, static_cast<std::uint32_t>(channels));
+            if ( static_cast<std::uint32_t>(channels) > max_channels_)
+            {
+                std::print(
+                    std::cerr, "Selected image format does not support {} channels. Some data will be lost.\n",
+                    channels
+                    );
+            }
+
+            min_channels_ = std::max(min_channels_, std::min(static_cast<std::uint32_t>(channels), max_channels_));
             auto& image = images.emplace_back();
-            image.path = entry.path();
-            image.width = static_cast<std::uint32_t>(x);
-            image.height = static_cast<std::uint32_t>(y);
+            image.path = std::filesystem::absolute(entry.path());
+            image.atlas_path = atlas_path;
+
+            image.width = static_cast<std::uint32_t>(width);
+            image.height = static_cast<std::uint32_t>(height);
         }
     }
 }
@@ -155,7 +183,7 @@ void application::pack()
     };
 
     const auto finder_input = rp::make_finder_input(
-        bin_size_,
+        static_cast<int>(config_.atlas_pixel_width),
         1,
         report_successful,
         report_unsuccessful,
@@ -164,7 +192,7 @@ void application::pack()
 
     while (!std::empty(rects)) // All rects exhausted
     {
-        auto result = rp::find_best_packing<spaces_type>(rects, finder_input);
+        [[maybe_unused]] auto result = rp::find_best_packing<spaces_type>(rects, finder_input);
 
         bins.push_back(current_bin_rectangles);
         current_bin_rectangles.clear();
@@ -220,14 +248,14 @@ void application::pack()
 void application::generate_atlases()
 {
     // Compute the size per texture
-    const std::size_t row_stride = bin_size_ * min_channels_ * sizeof(std::uint8_t);
-    const std::size_t bin_stride = row_stride * bin_size_;
+    const std::size_t row_stride = config_.atlas_pixel_width * min_channels_ * sizeof(std::uint8_t);
+    const std::size_t bin_stride = row_stride * config_.atlas_pixel_width;
 
     // Generate zero bitmaps
     for (auto& bin : bins_)
     {
         bin = std::make_unique<std::uint8_t[]>(bin_stride);
-        std::memset(bin.get(), 0x0, bin_size_);
+        std::memset(bin.get(), 0x0, config_.atlas_pixel_width);
     }
 
     // TODO: Do parallel-for-each loop
@@ -239,41 +267,25 @@ void application::generate_atlases()
             std::end(images),
             [&](const image& image) -> void
             {
-                std::unique_ptr<std::FILE, decltype([](FILE* f) { if (f) std::fclose(f); })> file;
+                auto file = open_file(image.path);
 
-#ifdef _WIN32
-                file.reset(_wfopen(image.path.wstring().c_str(), L"rb"));
-#else
-                file.reset(std::fopen(image.path.string().c_str(), "rb"));
-#endif
-
-                if (file.get() == nullptr)
+                if (file == nullptr)
                 {
                     std::print(std::cerr, "Failed to read file '{}'. Skipping...\n", image.path.string());
                     return;
                 }
 
-                int width, height, channels;
-                std::unique_ptr<std::uint8_t, decltype([](std::uint8_t* ptr) { if (ptr) stbi_image_free(ptr); } )>
-                    image_data;
+                std::size_t width, height, channels;
+                auto result = read_image(file.get(), min_channels_, width, height, channels);
 
-                image_data.reset(
-                    stbi_load_from_file(
-                        file.get(),
-                        std::addressof(width),
-                        std::addressof(height),
-                        std::addressof(channels),
-                        this->min_channels_
-                    )
-                );
-
-                if (image_data.get() == nullptr)
+                if (result.has_value() == false)
                 {
                     std::print(
                         std::cerr,
                         "Failed to read image '{}'. {}. Skipping...\n",
-                        image.path.string(), stbi_failure_reason()
+                        image.path.string(), result.error()
                     );
+
                     return;
                 }
 
@@ -286,6 +298,9 @@ void application::generate_atlases()
                     );
                     return;
                 }
+
+                // TODO: Handle image rotations
+                auto image_data = std::move(result.value());
 
                 auto p_dest_image = bins_[image.bin].get();
                 auto p_source_image = image_data.get();
@@ -308,73 +323,85 @@ void application::generate_atlases()
     }
 }
 
-void application::write_atlases(output_image_format format, const std::filesystem::path& output_folder, const std::string& output_name_format)
+void application::write_atlases()
 {
+    if (!std::filesystem::is_directory(config_.image_output_directory))
+    {
+        throw std::runtime_error(std::format("Invalid output directory '{}'.", config_.image_output_directory.string()));
+    }
+
     for (std::size_t i = 0; i < std::size(bins_); ++i)
     {
-        const auto l = std::snprintf(nullptr, 0, output_name_format.c_str(), static_cast<int>(i));
+        auto file_name = format_image_file_name(i + 1);
+        auto out_path = config_.image_output_directory / file_name;
 
-        if (l < 0)
-            throw std::invalid_argument(std::format("Format '{}' is invalid.\n", output_name_format));
-
-        std::string file_name(l + 1, ' ');
-        std::snprintf(std::data(file_name), std::size(file_name), output_name_format.c_str(), static_cast<int>(i + 1));
-
-        auto out_path = output_folder / file_name;
-
-        bool result = false;
-
-        switch (format)
+        if (config_.config_use_bin_image_absolute_path)
         {
-        case output_image_format::PNG:
-            result = stbi_write_png(
-                out_path.string().c_str(),
-                    bin_size_,
-                    bin_size_,
-                    min_channels_,
-                    bins_[i].get(),
-                    min_channels_ * bin_size_ * sizeof(std::uint8_t)
-                );
-            break;
-        case output_image_format::BMP:
-            result = stbi_write_bmp(
-                out_path.string().c_str(),
-                bin_size_,
-                bin_size_,
-                min_channels_,
-                bins_[i].get()
-            );
-            break;
-
-        case output_image_format::TGA:
-            result = stbi_write_tga(
-                out_path.string().c_str(),
-                bin_size_,
-                bin_size_,
-                min_channels_,
-                bins_[i].get()
-            );
-            break;
-
-        case output_image_format::JPG:
-            result = stbi_write_jpg(
-                out_path.string().c_str(),
-                bin_size_,
-                bin_size_,
-                min_channels_,
-                bins_[i].get(),
-                100
-            );
-            break;
-        default:
-            std::unreachable();
+            bin_paths_.push_back(out_path);
         }
+        else
+        {
+            bin_paths_.emplace_back(file_name);
+        }
+
+        const bool result = write_image(config_.image_output_format, out_path,
+            bins_[i].get(),
+            min_channels_,
+            config_.atlas_pixel_width,
+            config_.atlas_pixel_width
+        );
 
         if (result == false)
         {
             throw std::runtime_error(std::format("Failed to write atlas '{}'.", out_path.string()));
         }
     }
+}
+
+void application::write_config()
+{
+    using json = nlohmann::json;
+
+    using std::filesystem::path;
+
+    json j
+    {
+        {"version", 1},
+        { "bin-textures", this->bin_paths_ | std::views::transform([](auto& e) { /*std::mem_fn fails*/ return e.string(); }) | std::ranges::to<std::vector>() }
+    };
+
+    for (auto& images : images_ | std::views::values)
+    {
+        for (auto& image : images)
+        {
+            auto& json_image = j["images"][image.atlas_path.string()];
+            json_image["bin"] = image.bin;
+            json_image["x"] = image.x;
+            json_image["y"] = image.y;
+            json_image["width"] = image.width;
+            json_image["height"] = image.height;
+        }
+    }
+
+    std::ofstream f(config_.config_output_path);
+    if (!f.is_open())
+        throw std::runtime_error(std::format("Failed to open '{}' for write.", config_.config_output_path.string()));
+
+    f << std::setw(4) << j << std::endl;
+}
+
+std::string application::format_image_file_name(std::size_t image) const
+{
+    auto format = config_.image_output_name_format.c_str();
+    const auto l = std::snprintf(nullptr, 0, format, static_cast<int>(image));
+
+    if (l < 0)
+        throw std::invalid_argument(std::format("Format '{}' is invalid.\n", format));
+
+    std::string file_name(l + 1, ' ');
+    std::snprintf(std::data(file_name), std::size(file_name), format, static_cast<int>(image));
+
+    return static_cast<std::string>(file_name.c_str()); // Get rid of padding
 }
 
 
