@@ -8,6 +8,7 @@ on:
 env:
   CONFIGURE_PRESET: linux
   BUILD_PRESET: linux-release
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 jobs:
   build:
     runs-on: ubuntu-latest
