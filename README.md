@@ -39,11 +39,11 @@ The output contains bins and the .json config file describing, what is in genera
             "x": 0,
             "y": 0
         },
-        "b": { ... },
-        "subdir/b": { ... },
+        "b": { /*...*/ },
+        "subdir/b": { /*...*/ },
         "subdir/c": {
             "bin": 1
-            ...
+            /*...*/
         }
     }
 }
