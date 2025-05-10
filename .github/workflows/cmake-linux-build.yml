@@ -1,0 +1,23 @@
+name: Linux Build
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CONFIGURE_PRESET: linux
+  BUILD_PRESET: linux-release
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Configure CMake
+      run: cmake --preset ${{env.CONFIGURE_PRESET}}
+
+    - name: Build
+      run: cmake --build --preset ${{env.BUILD_PRESET}}
