@@ -123,6 +123,13 @@ void application::generate_image_database()
                 continue;
             }
 
+            if (width > config_.atlas_pixel_width || height > config_.atlas_pixel_width)
+            {
+                std::print(std::cerr, "Image '{}' is too big. Size is {}x{}, max supported size is {}x{}. Skipping...\n",
+                   entry.path().string(), width, height, config_.atlas_pixel_width, config_.atlas_pixel_width);
+                continue;
+            }
+
             if ( static_cast<std::uint32_t>(channels) > max_channels_)
             {
                 std::print(

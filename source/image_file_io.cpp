@@ -84,7 +84,7 @@ bool write_image(
     )
 {
     auto path_string = path.string();
-    auto path_c_string = path.c_str();
+    auto path_c_string = path_string.c_str();
 
     switch (format)
     {
