@@ -70,6 +70,11 @@
             "name": "linux-release",
             "configurePreset": "linux",
             "generators": ["TGZ"]
+        },
+        {
+            "name": "windows-release",
+            "configurePreset": "windows",
+            "generators": ["ZIP"]
         }
     ]
 }
