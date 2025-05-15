@@ -8,12 +8,17 @@
         {
             "name": "binary_env",
             "hidden": true,
-            "binaryDir": "${sourceDir}/build/${presetName}",
+            "binaryDir": "${sourceDir}/build/${presetName}"
+        },
+        {
+            "inherits": [ "binary_env" ],
+            "name" : "linux",
             "generator": "Ninja Multi-Config"
         },
         {
             "inherits": [ "binary_env" ],
-            "name" : "linux"
+            "name" : "windows",
+            "generator": "Visual Studio 17 2022"
         }
     ],
     "buildPresets": [
@@ -32,6 +37,24 @@
         {
             "name": "linux-release",
             "configurePreset": "linux",
+            "configuration": "Release",
+            "jobs" : 0
+        },
+        {
+            "name": "windows-debug",
+            "configurePreset": "windows",
+            "configuration": "Debug",
+            "jobs" : 0
+        },
+        {
+            "name": "windows-release-with-deb-info",
+            "configurePreset": "windows",
+            "configuration": "RelWithDebInfo",
+            "jobs" : 0
+        },
+        {
+            "name": "windows-release",
+            "configurePreset": "windows",
             "configuration": "Release",
             "jobs" : 0
         }
