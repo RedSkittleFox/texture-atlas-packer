@@ -1,4 +1,4 @@
-name: Linux Build
+name: Build and Generate Artifacts
 
 on:
   push:
@@ -6,11 +6,9 @@ on:
       - 'v*'
 
 env:
-  CONFIGURE_PRESET: linux
-  BUILD_PRESET: linux-release
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 jobs:
-  build:
+  release_linux:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -32,10 +30,10 @@ jobs:
         sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-19 100
 
     - name: Configure CMake
-      run: CC=clang-19 CXX=clang++-19 cmake --preset ${{env.CONFIGURE_PRESET}}
+      run: CC=clang-19 CXX=clang++-19 cmake --preset linux
 
     - name: Build
-      run: cmake --build --preset ${{env.BUILD_PRESET}}
+      run: cmake --build --preset linux-release
 
     - name: Package Binary
       run: cpack --preset linux-release
@@ -75,3 +73,26 @@ jobs:
         asset_path: build/linux/texture-atlas-packer-source.tar.gz
         asset_name: texture-atlas-packer-${{ github.ref_name }}-source.tar.gz
         asset_content_type: application/gzip
+
+  release_windows:
+    runs-on: windows-latest
+    needs: [ release_linux ]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure CMake
+        run: cmake --preset windows -DCMAKE_CXX_COMPILER=cl -DCMAKE_C_COMPILER=cl
+
+      - name: Build
+        run: cmake --build --preset windows-release
+
+      - name: Package Binary
+        run: cpack --preset windows-release
+
+      - name: Upload Binary Asset
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ${{ github.workspace }}/build/windows/texture-atlas-packer.zip
+          asset_name: texture-atlas-packer-${{ github.ref_name }}-win.zip
+          asset_content_type: application/zip
