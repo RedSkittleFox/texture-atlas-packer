@@ -377,6 +377,8 @@ void application::write_config()
         { "bin-textures", this->bin_paths_ | std::views::transform([](auto& e) { /*std::mem_fn fails*/ return e.string(); }) | std::ranges::to<std::vector>() }
     };
 
+    j["bin-dimensions"] = json{{"width", config_.atlas_pixel_width}, {"height", config_.atlas_pixel_width}};
+
     for (auto& images : images_ | std::views::values)
     {
         for (auto& image : images)
